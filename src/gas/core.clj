@@ -1,6 +1,7 @@
-(ns gas.core)
+(ns gas.core
+  (:require [clojure.math.numeric-tower :as math]))
 
-
+(def D 2.)
 (defn mk-particle [x y vx vy] {:x x :y y :vx vx :vy vy})
 
 (defn mk-particles [n w h v]
@@ -13,55 +14,41 @@
           {}
           items))
 
-(defn adjacent-buckets [buckets d]
-  (loop [bs (keys buckets)
-         adjs (if (<= (- (second bs) (first bs)) d)
-                {(first bs) (list (second bs))}
-                {})]
-    (println bs)
-    (let [three (take 3 bs)]
-      (println three)
-      (if (not (= 3 (count (take 3 bs))))
-        adjs
-        (recur 
-          (rest bs)
-          (cond
-            (<= (- (nth three 2) (first three)) (* 2 d))
-            (assoc adjs (second three) (list (first three) (nth three 2)))
+(defn collide-particle-lists
+ "Detect collisions between 'collide-parts' and 'concat collide-parts parts'.
+ Return a list of pairs of colliding particles."
+ [collide-parts parts]
+ (loop [cols collide-parts
+        other (drop-while #(< D (- (:x (first cols)) (:x %))) parts)
+        pairs (list)]
+   (if (nil? cols)
+     pairs
+     (recur 
+       (rest cols)
+       (drop-while #(< D (- (:x (second cols)) (:x %))) parts)
+       (concat pairs
+       (map list 
+            (concat (take-while #(<= D (math/abs (- (:x %) (:x (first cols))))) other)
+                    (take-while #(<= D (- (:x %) (:x (first cols)))) (rest cols)))
+            (repeat (first cols))))))))
 
-            (<= (- (nth three 2) (second three)) d)
-            (assoc adjs (second three) (list (nth three 2)))
-
-          :otherwise adjs))))))
 
 (defn collisions
   "Yields a list of pairs of colliding particles"
   [buckets]
-  (loop [bys (vals buckets)
-         bxs (vals (buckets (first bys)))
-         pairs []]
-    (cond (nil? bys) pairs
-          (nil? bxs) (recur (rest bys) (vals (buckets (second bys))) pairs)
-          :otherwise 
-          (recur bys (rest bxs)
-                 (let [bx (first bxs)
-                       by (first bys)
-                       parts ((buckets by) bx)]
-                   (reduce
-                     (fn [prs part]
-                       (let [d 2
-                             right ((buckets d) (+ b-x d))
-                             down  ((buckets (+ b-y d)) b-x)
-                             dori  ((buckets (+ b-y d)) (+ b-x d))]))
-                     pairs
-                   parts))))))
+  (loop [bys (keys buckets)
+         pairs (list)]
+    (print bys)
+    (if (nil? bys)
+      pairs
+      (recur (rest bys)
+             (collide-particle-lists (buckets (first bys))
+                                     (buckets (+ (first bys) D)))))))
 
 (defn foo
   "main?"
   []
-  let [d 2 ; particle diameter
-        ps (mk-particles 20 10 10 1)
-        buckets (into {} (map (fn [[k v]] 
-                                [k (bucket-by v :x d)])
-                              (bucket-by ps :y d)))]
-    (println (keys buckets)))
+  (let [ps (mk-particles 20 10 10 1)
+        buckets (into {} (map (fn [[k v]] [k (sort-by :x v)])
+                              (bucket-by ps :y D)))]
+    (println (collisions buckets))))
