@@ -1,5 +1,6 @@
 (ns gas.core
-  (:require [clojure.math.numeric-tower :as math]))
+  (:require [clojure.math.numeric-tower :as math]
+            [quil.core :as q :include-macros true] ))
 
 (def D 2.)
 (defn mk-particle [x y vx vy] {:x x :y y :vx vx :vy vy})
@@ -21,7 +22,7 @@
  (loop [cols collide-parts
         other (drop-while #(< D (- (:x (first cols)) (:x %))) parts)
         pairs (list)]
-   (if (nil? cols)
+   (if (empty? cols)
      pairs
      (recur 
        (rest cols)
@@ -38,8 +39,8 @@
   [buckets]
   (loop [bys (keys buckets)
          pairs (list)]
-    (print bys)
-    (if (nil? bys)
+    (println bys)
+    (if (empty? bys)
       pairs
       (recur (rest bys)
              (collide-particle-lists (buckets (first bys))
@@ -52,3 +53,37 @@
         buckets (into {} (map (fn [[k v]] [k (sort-by :x v)])
                               (bucket-by ps :y D)))]
     (println (collisions buckets))))
+
+;; ---------- QUIL Viz -------------
+
+(defn draw [state]
+  (q/background 0)
+  (q/stroke 230)
+  (q/no-fill)
+  (doseq [p (:particles :state)]
+    (q/ellipse (:x p) (:y p) D D))
+  (doseq [[p1 p2] (:pairs :state)]
+    (q/line (:x p1) (:y p1) (:x p2) (:y p2))))
+
+(defn start-sketch [state]
+  (q/sketch
+    :host "host"
+    :size [500 300]
+    :draw #(draw @state)
+ ;   :mouse-clicked reset-progress-bar)
+  )
+
+(defn progress-bar-iteration [state]
+  ; Reset state to 0 once it reaches 100. Otherwise just increment it.
+  (swap! state #(if (= % 100) 0 (inc %)))
+  ; Schedule next iteration using random delay.
+  (js/setTimeout (partial progress-bar-iteration state)
+                 (rand-time-to-wait)))
+
+(defn start-progress-bar []
+  (let [state (atom 0)
+        reset-progress-bar #(reset! state 0 )]
+    (progress-bar-iteration state)
+    (start-sketch state reset-progress-bar)))
+
+;;(start-progress-bar)
