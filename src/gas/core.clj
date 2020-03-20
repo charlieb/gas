@@ -16,23 +16,30 @@
           {}
           items))
 
+(defn dist [p1 p2]
+  (math/sqrt (+ (math/expt (- (:x p1) (:x p2)) 2)
+                (math/expt (- (:y p1) (:y p2)) 2))))
+
 (defn collide-particle-lists
   "Detect collisions between 'collide-parts' and 'concat collide-parts parts'.
   Return a list of pairs of colliding particles."
   [collide-parts parts]
-  (loop [cols collide-parts
-         other (drop-while #(< D (- (:x (first cols)) (:x %))) parts)
-         pairs (list)]
-    (if (empty? cols)
-      pairs
-      (recur 
-        (rest cols)
-        (drop-while #(< D (- (:x (second cols)) (:x %))) parts)
-        (concat pairs
-                (map list 
-                     (concat (take-while #(>= D (math/abs (- (:x %) (:x (first cols))))) other)
-                             (take-while #(>= D (- (:x %) (:x (first cols)))) (rest cols)))
-                     (repeat (first cols))))))))
+  (let [within-D (fn [p other] (>= D (math/abs (- (:x other (:x p))))))
+        within-D-right (fn [p other] (>= D (- (:x other (:x p)))))]
+    (loop [cols collide-parts
+           other (drop-while #(< D (- (:x (first cols)) (:x %))) parts)
+           pairs (list)]
+      (if (empty? cols)
+        pairs
+        (recur 
+          (rest cols)
+          (drop-while #(< D (- (:x (second cols)) (:x %))) parts)
+          (concat pairs
+                  (filter (fn [[p1 p2]] (> D (dist p1 p2))) 
+                          (map list 
+                               (concat (take-while #(within-D (first cols) %) other)
+                                       (take-while #(within-D-right (first cols) %) (rest cols)))
+                               (repeat (first cols))))))))))
 
 
 (defn collisions
