@@ -20,12 +20,14 @@
   (math/sqrt (+ (math/expt (- (:x p1) (:x p2)) 2)
                 (math/expt (- (:y p1) (:y p2)) 2))))
 
+(defn prnt [x] (println  "++ " x) x)
+
 (defn collide-particle-lists
   "Detect collisions between 'collide-parts' and 'concat collide-parts parts'.
   Return a list of pairs of colliding particles."
   [collide-parts parts]
-  (let [within-D (fn [p other] (>= D (math/abs (- (:x other (:x p))))))
-        within-D-right (fn [p other] (>= D (- (:x other (:x p)))))]
+  (let [within-D (fn [p other] (>= D (math/abs (- (:x other) (:x p)))))
+        within-D-right (fn [p other] (>= D (- (:x other) (:x p))))]
     (loop [cols collide-parts
            other (drop-while #(< D (- (:x (first cols)) (:x %))) parts)
            pairs (list)]
@@ -65,6 +67,35 @@
         cols (collisions buckets)]
     {:particles ps :pairs cols :buckets buckets :stop false}))
 
+;; ---------- Validation -----------
+(defn check-all-for-collisions
+  "Check every particle against every other to allow validation of bucket approach"
+  [ps]
+  (loop [p (first ps)
+         ps (rest ps)
+         pairs (list)]
+    (if (empty? ps)
+      pairs
+      (recur (first ps) (rest ps)
+             (concat pairs
+                     (map list
+                          (filter (fn [p2] (> D (dist p p2))) ps)
+                          (repeat p)))))))
+
+(defn check-pairs []
+  (let [ps (sort-by :x (mk-particles 10 50 50 D))
+        naive (map #(sort-by :x %) (sort-by #(:x (first %)) (check-all-for-collisions ps)))
+        buckets (into {} (map (fn [[k v]] [k (sort-by :x v)])
+                              (bucket-by ps :y D)))
+        buckt (map #(sort-by :x %) (sort-by #(:x (first %)) (collisions buckets)))
+        pair= (fn [[p11 p12] [p21 p22]] (or (and (= p11 p21) (= p12 p22))
+                                            (and (= p12 p21) (= p11 p22))
+                                            (and (= p11 p22) (= p12 p21))
+                                            (and (= p12 p22) (= p11 p21))
+                                            ))
+        ]
+    (and (= (count buckt) (count naive))
+         (every? (map (fn [pb] (some (partial pair= pb) naive))) buckt))))
 
 ;; ---------- Driver ---------------
 (def WIDTH 500)
