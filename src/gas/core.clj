@@ -46,26 +46,26 @@
 
 (defn collisions
   "Yields a list of pairs of colliding particles"
-  [buckets]
-  (loop [bys (keys buckets)
-         pairs (list)]
-    (if (empty? bys)
-      pairs
-      (recur (rest bys)
-             (concat pairs
-                     (collide-particle-lists (buckets (first bys))
-                                             (buckets (+ (first bys) D))))))))
+  [particles]
+  (let [buckets (into {} (map (fn [[k v]] [k (sort-by :x v)])
+                              (bucket-by particles :y D)))]
+    (loop [bys (keys buckets)
+           pairs (list)]
+      (if (empty? bys)
+        pairs
+        (recur (rest bys)
+               (concat pairs
+                       (collide-particle-lists (buckets (first bys))
+                                               (buckets (+ (first bys) D)))))))))
 
 (defn iterate-particle-sim [particles])
 
-(defn init-particles-pairs
+(defn init-particles
   "main?"
   [n w h]
   (let [ps (mk-particles n w h D)
-        buckets (into {} (map (fn [[k v]] [k (sort-by :x v)])
-                              (bucket-by ps :y D)))
-        cols (collisions buckets)]
-    {:particles ps :pairs cols :buckets buckets :stop false}))
+        cols (collisions ps)]
+    {:particles ps :collisions cols :stop false}))
 
 ;; ---------- Validation -----------
 (defn check-all-for-collisions
@@ -82,12 +82,10 @@
                           (filter (fn [p2] (> D (dist p p2))) ps)
                           (repeat p)))))))
 
-(defn check-pairs []
-  (let [ps (sort-by :x (mk-particles 10 50 50 D))
+(defn check-pairs [n]
+  (let [ps (sort-by :x (mk-particles n 500 500 D))
         naive (map #(sort-by :x %) (sort-by #(:x (first %)) (check-all-for-collisions ps)))
-        buckets (into {} (map (fn [[k v]] [k (sort-by :x v)])
-                              (bucket-by ps :y D)))
-        buckt (map #(sort-by :x %) (sort-by #(:x (first %)) (collisions buckets)))
+        buckt (map #(sort-by :x %) (sort-by #(:x (first %)) (collisions ps)))
         pair= (fn [[p11 p12] [p21 p22]] (or (and (= p11 p21) (= p12 p22))
                                             (and (= p12 p21) (= p11 p22))
                                             (and (= p11 p22) (= p12 p21))
@@ -101,12 +99,7 @@
 (def WIDTH 500)
 (def HEIGHT 500)
 
-(defn update-particles [state]
-  (let [ps (mk-particles (count (:particles state)) WIDTH HEIGHT D)
-        buckets (into {} (map (fn [[k v]] [k (sort-by :x v)])
-                              (bucket-by ps :y D)))
-        cols (collisions buckets)]
-  (assoc state :particles ps :pairs cols :buckets buckets)))
+(defn update-particles [state] state)
 
 (defn run-sim [state] 
   (loop [] 
@@ -122,28 +115,29 @@
 (defn draw [state]
   (q/background 0)
   (q/no-fill)
-;;  (q/stroke 255 0 0)
-;;  (doseq [p (:particles state)]
-;;    (q/ellipse (:x p) (:y p) D D))
-  (q/stroke 0 255 0)
-  (doseq [[p1 p2] (:pairs state)]
-    (q/line (:x p1) (:y p1) (:x p2) (:y p2)))
   (q/stroke 0 0 255)
-  (doseq [[v b] (:buckets state)]
-    (q/stroke 0 v 255)
-    (doseq [p b]
-      (q/ellipse (:x p) (:y p) D D))))
+  (doseq [p (:particles state)]
+    (q/ellipse (:x p) (:y p) D D))
+  (q/stroke 0 255 0)
+  (doseq [[p1 p2] (:collisions state)]
+    (q/line (:x p1) (:y p1) (:x p2) (:y p2)))
+  ;;(q/stroke 0 0 255)
+;;  (doseq [[v b] (:buckets state)]
+;;    (q/stroke 0 v 255)
+;;    (doseq [p b]
+;;      (q/ellipse (:x p) (:y p) D D))))
+)
 
 (defn start-sketch [state]
   (q/sketch
     :host "host"
     :size [WIDTH HEIGHT]
     :draw #(draw @state)
-    :on-close (fn [] (swap! state #(assoc % :stop true))
+    :on-close (fn [] (q/save-frame "frame###.png") (swap! state #(assoc % :stop true))
   )))
 
 (defn start [n]
-  (let [state (atom (init-particles-pairs n WIDTH HEIGHT))]
+  (let [state (atom (init-particles n WIDTH HEIGHT))]
     (async/thread (run-sim state))
     (start-sketch state)))
 
