@@ -6,7 +6,7 @@
 (def D 10.)
 (def next_id -1)
 
-(defn mk-particle [x y vx vy] (set! next_id (+ 1 next_id)) {:id next_id :x x :y y :vx vx :vy vy})
+(defn mk-particle [x y vx vy] (alter-var-root (var next_id) #(+ 1 %)) {:id next_id :x x :y y :vx vx :vy vy})
 
 (defn mk-particles [n w h d]
   (repeatedly n #(mk-particle (rand w) (rand h) (rand d) (rand d))))
