@@ -88,6 +88,9 @@
 ;;  (reduce (fn [acc [p1 p2]] 
 ;;            (update acc p1 #(if (nil? %) {p2} (conj % p2))))))
 
+(defn apply-v [p] (update p 
+                          :x #(+ % (:vx p))
+                          :y #(+ % (:vy p))))
 
 (defn iterate-particle-sim [particles]
   (->> particles
@@ -96,7 +99,13 @@
        (mapcat #(apply elastic-collision %))
        (map #(list (:id %) %))
        (apply hash-map)
-       (into particles)))
+       (into particles)
+
+       vals
+       (map apply-v)
+       (map #(list (:id %) %))
+       (apply hash-map)
+       ))
 
 (defn test-coll []
   (iterate-particle-sim {1 {:id 1 :x 0  :y 1 :vx 0 :vy 0} 
