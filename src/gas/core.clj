@@ -63,30 +63,44 @@
 (defn elastic-collision 
   "Collides the two particles and returns a pair particles with updated velocities"
   [p1 p2]
-  (let [v- (fn [v1 v2] {:vx (- (:vx v1) (:vx v2)) :vy (- (:vy v1) (:vy v2))})
-        v* (fn [v s] {:vx (* (:vx v) s) :vy (* (:vy v) s)})
-        vdiv (fn [v s] {:vx (/ (:vx v) s) :vy (* (:vy v) s)})
-        p- (fn [v1 v2] {:x (- (:x v1) (:x v2)) :y (- (:y v1) (:y v2))})
-        vpdot (fn [v p] (+ (* (:vx v) (:x p)) (* (:vy v) (:y p))))
-        pdot (fn [p1 p2] (+ (* (:x p1) (:x p2)) (* (:y p1) (:y p2))))
-        p2v (fn [p] {:vx (:x p) :vy (:y p)})
+  (let [v2p (fn [p] {:x (:vx p) :y (:vy p)})
+        v1 (v2p p1)
+        v2 (v2p p2)
+        v- (fn [v1 v2] {:x (- (:x v1) (:x v2)) :y (- (:y v1) (:y v2))})
+        v* (fn [v s] {:x (* (:x v) s) :y (* (:y v) s)})
+        vdiv (fn [v s] {:x (/ (:x v) s) :y (* (:y v) s)})
+        dot (fn [p1 p2] (+ (* (:x p1) (:x p2)) (* (:y p1) (:y p2))))
 
-        v1 (v- p1 (v* (vdiv (vpdot (v- p1 p2) (p- p1 p2))
-                          (math/expt (pdot (p- p1 p2))))
-                      (p- p1 p2)))
+        v1' (v- v1  (v* (v- p1 p2)
+                      (/ (dot (v- v1 v2) (v- p1 p2))
+                         (dot (v- p1 p2) (v- p1 p2)))))
 
-        v2 (v- p2 (v* (vdiv (vpdot (v- p2 p1) (p- p2 p1))
-                          (math/expt (pdot (p- p2 p1))))
-                      (p- p2 p1)))
-        vset (fn [p v] (assoc p :vx (:vx v) :vy (:vy v)))]
-    (list (vset p1 v1) (vset p2 v2))))
+        v2' (v- v2 (v* (v- p2 p1)
+                      (/ (dot (v- v2 v1) (v- p2 p1))
+                         (dot (v- p2 p1) (v- p2 p1)))))
+
+        vset (fn [p v] (assoc p :vx (:x v) :vy (:y v)))]
+    (println v1 v1')
+    (println v2 v2')
+    (list (vset p1 v1') (vset p2 v2'))))
 
 ;;(defn collate-collistions [pairs]
 ;;  (reduce (fn [acc [p1 p2]] 
 ;;            (update acc p1 #(if (nil? %) {p2} (conj % p2))))))
 
 
-(defn iterate-particle-sim [particles])
+(defn iterate-particle-sim [particles]
+  (->> particles
+       vals
+       collisions
+       (mapcat #(apply elastic-collision %))
+       (map #(list (:id %) %))
+       (apply hash-map)
+       (into particles)))
+
+(defn test-coll []
+  (iterate-particle-sim {1 {:id 1 :x 0  :y 1 :vx 0 :vy 0} 
+                         2 {:id 2 :x 4  :y 0 :vx -5 :vy 0}}))
 
 (defn init-particles
   "main?"
