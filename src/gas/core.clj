@@ -1,15 +1,20 @@
 (ns gas.core
   (:require [clojure.core.async :as async]
             [clojure.math.numeric-tower :as math]
-            [quil.core :as q :include-macros true] ))
+            [quil.core :as q :include-macros true]
+            [quil.middleware :as m] ))
 
 (def D 10.)
 (def next_id -1)
 
-(defn mk-particle [x y vx vy] (alter-var-root (var next_id) #(+ 1 %)) {:id next_id :x x :y y :vx vx :vy vy})
+(defn prnt [prefix x] (println prefix x) x)
+
+(defn mk-particle [x y vx vy] 
+  (alter-var-root (var next_id) #(+ 1 %))
+  {:id next_id :x x :y y :vx vx :vy vy})
 
 (defn mk-particles [n w h d]
-  (repeatedly n #(mk-particle (rand w) (rand h) (rand d) (rand d))))
+  (repeatedly n #(mk-particle (rand w) (rand h) (- (* 0.5 d) (rand d)) (- (* 0.5 d) (rand d)))))
 
 (defn bucket-by
   "Bucket the items of items into d sized buckets of values of f(item)" 
@@ -22,7 +27,6 @@
   (math/sqrt (+ (math/expt (- (:x p1) (:x p2)) 2)
                 (math/expt (- (:y p1) (:y p2)) 2))))
 
-(defn prnt [x] (println  "++ " x) x)
 
 (defn collide-particle-lists
   "Detect collisions between 'collide-parts' and 'concat collide-parts parts'.
@@ -80,43 +84,14 @@
                          (dot (v- p2 p1) (v- p2 p1)))))
 
         vset (fn [p v] (assoc p :vx (:x v) :vy (:y v)))]
-    (println v1 v1')
-    (println v2 v2')
     (list (vset p1 v1') (vset p2 v2'))))
 
 ;;(defn collate-collistions [pairs]
 ;;  (reduce (fn [acc [p1 p2]] 
 ;;            (update acc p1 #(if (nil? %) {p2} (conj % p2))))))
 
-(defn apply-v [p] (update p 
-                          :x #(+ % (:vx p))
-                          :y #(+ % (:vy p))))
-
-(defn iterate-particle-sim [particles]
-  (->> particles
-       vals
-       collisions
-       (mapcat #(apply elastic-collision %))
-       (map #(list (:id %) %))
-       (apply hash-map)
-       (into particles)
-
-       vals
-       (map apply-v)
-       (map #(list (:id %) %))
-       (apply hash-map)
-       ))
-
-(defn test-coll []
-  (iterate-particle-sim {1 {:id 1 :x 0  :y 1 :vx 0 :vy 0} 
-                         2 {:id 2 :x 4  :y 0 :vx -5 :vy 0}}))
-
-(defn init-particles
-  "main?"
-  [n w h]
-  (let [ps (mk-particles n w h D)
-        cols (collisions ps)]
-    {:particles ps :collisions cols :stop false}))
+(defn apply-v [p] (into p {:x (+ (:x p) (:vx p))
+                           :y (+ (:y p) (:vy p))}))
 
 ;; ---------- Validation -----------
 (defn check-all-for-collisions
@@ -146,11 +121,44 @@
     (and (= (count buckt) (count naive))
          (every? (map (fn [pb] (some (partial pair= pb) naive))) buckt))))
 
+;; ^^^^^^^^^^^ Above particles is a list
+;; vvvvvvvvvvv Below particles is a hash-map with id as the key
+
+(defn to-id-hash-map [ps] (apply hash-map (mapcat #(list (:id %) %) ps)))
+
+(defn iterate-particle-sim [particles]
+  (let [cols (collisions (vals particles))
+        parts (->> cols
+                   (mapcat #(apply elastic-collision %))
+                   to-id-hash-map
+                   (into particles)
+
+                   vals
+                   (map apply-v)
+                   to-id-hash-map)]
+    {:particles parts :collisions cols})) 
+
+(defn basic-colliding []
+  {1 {:id 1 :x 200.  :y 200. :vx 0. :vy 0.} 
+   2 {:id 2 :x 241  :y 200. :vx -10. :vy 0.}})
+
+(defn test-coll []
+  (iterate-particle-sim (basic-colliding)))
+
+(defn init-particles
+  "main?"
+  [n w h]
+  (let [ps (basic-colliding)
+        ;;ps (to-id-hash-map (mk-particles n w h D))
+        cols (collisions (vals ps))]
+    {:particles ps :collisions cols :stop false}))
+
 ;; ---------- Driver ---------------
 (def WIDTH 500)
 (def HEIGHT 500)
 
-(defn update-particles [state] state)
+(defn update-particles [state] 
+  (into state (iterate-particle-sim (:particles state))))
 
 (defn run-sim [state] 
   (loop [] 
@@ -167,7 +175,7 @@
   (q/background 0)
   (q/no-fill)
   (q/stroke 0 0 255)
-  (doseq [p (:particles state)]
+  (doseq [p (vals (:particles state))]
     (q/ellipse (:x p) (:y p) D D))
   (q/stroke 0 255 0)
   (doseq [[p1 p2] (:collisions state)]
@@ -192,3 +200,17 @@
     (async/thread (run-sim state))
     (start-sketch state)))
 
+(defn start-sketch-sync [state]
+  (q/sketch
+    :host "host"
+    :size [WIDTH HEIGHT]
+    :setup (fn [] state)
+    :draw #(draw %)
+    :update #(update-particles %)
+    :on-close (fn [_] (q/save-frame "frame###.png")) 
+    :middleware [m/fun-mode]
+  ))
+
+(defn start-sync [n]
+  (let [state (init-particles n WIDTH HEIGHT)]
+    (start-sketch-sync state)))
