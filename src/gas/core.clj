@@ -64,16 +64,20 @@
                        (collide-particle-lists (buckets (first bys))
                                                (buckets (+ (first bys) D)))))))))
 
+(defn v+ [v1 v2] {:x (+ (:x v1) (:x v2)) :y (+ (:y v1) (:y v2))})
+(defn v- [v1 v2] {:x (- (:x v1) (:x v2)) :y (- (:y v1) (:y v2))})
+(defn v* [v s] {:x (* (:x v) s) :y (* (:y v) s)})
+(defn vdiv [v s] {:x (/ (:x v) s) :y (/ (:y v) s)})
+(defn dot  [p1 p2] (+ (* (:x p1) (:x p2)) (* (:y p1) (:y p2))))
+(defn mag [v] (math/sqrt (+ (math/expt (:x v) 2) (math/expt (:y v) 2))))
+(defn norm [v] (vdiv v (mag v)))
+
 (defn elastic-collision 
   "Collides the two particles and returns a pair particles with updated velocities"
   [p1 p2]
   (let [v2p (fn [p] {:x (:vx p) :y (:vy p)})
         v1 (v2p p1)
         v2 (v2p p2)
-        v- (fn [v1 v2] {:x (- (:x v1) (:x v2)) :y (- (:y v1) (:y v2))})
-        v* (fn [v s] {:x (* (:x v) s) :y (* (:y v) s)})
-        vdiv (fn [v s] {:x (/ (:x v) s) :y (* (:y v) s)})
-        dot (fn [p1 p2] (+ (* (:x p1) (:x p2)) (* (:y p1) (:y p2))))
 
         v1' (v- v1  (v* (v- p1 p2)
                       (/ (dot (v- v1 v2) (v- p1 p2))
@@ -126,36 +130,73 @@
 
 (defn to-id-hash-map [ps] (apply hash-map (mapcat #(list (:id %) %) ps)))
 
+
+(defn basic-colliding []
+  {1 {:id 1 :x 200.  :y 200. :vx 0. :vy 0.} 
+   2 {:id 2 :x 200.  :y 250. :vx 0. :vy -1}})
+
+(defn exclude "Returns hash-map of particles after moving to non-overlapping positions"
+  [collisions]
+  (reduce (fn [parts [p1 p2]]
+            (let [dv (v- p1 p2)
+                  dvnorm (norm dv)
+                  m (mag dv)
+                  ovl (- D m)
+                  p1d (into p1 (v+ p1 (v* dvnorm (/ ovl 1.5))))
+                  p2d (into p2 (v+ p2 (v* dvnorm (/ ovl -1.5))))
+                  ]
+              (into parts {(:id p1) p1d
+                           (:id p2) p2d})))
+          {} collisions))
+
+(defn eliminate-overlaps [particles]
+  (loop [ps particles]
+    (let [cols (collisions (vals ps))]
+      (println (count cols))
+      (if (zero? (count cols))
+        ps
+        (recur (into ps (exclude cols)))))))
+
+; TODO move these back down to DRIVER section
+(def WIDTH 500)
+(def HEIGHT 500)
+(defn keep-on-screen [particles]
+  (apply hash-map
+         (mapcat (fn [[id p]]
+                   [id 
+                    (-> p
+                        ((fn [p] (cond (< (:x p) 0) (assoc p :x 0 :vx (- (:vx p)))
+                                       (> (:x p) WIDTH) (assoc p :x WIDTH :vx (- (:vx p)))
+                                       :otherwise p)))
+                        ((fn [p] (cond (< (:y p) 0) (assoc p :y 0 :vy (- (:vy p)))
+                                       (> (:y p) HEIGHT) (assoc p :y HEIGHT :vy (- (:vy p)))
+                                       :otherwise p))))])
+                 particles)))
+
 (defn iterate-particle-sim [particles]
   (let [cols (collisions (vals particles))
         parts (->> cols
                    (mapcat #(apply elastic-collision %))
                    to-id-hash-map
                    (into particles)
+                   keep-on-screen
+                   eliminate-overlaps
 
                    vals
                    (map apply-v)
                    to-id-hash-map)]
     {:particles parts :collisions cols})) 
 
-(defn basic-colliding []
-  {1 {:id 1 :x 200.  :y 200. :vx 0. :vy 0.} 
-   2 {:id 2 :x 241  :y 200. :vx -10. :vy 0.}})
-
-(defn test-coll []
-  (iterate-particle-sim (basic-colliding)))
-
 (defn init-particles
   "main?"
   [n w h]
-  (let [ps (basic-colliding)
-        ;;ps (to-id-hash-map (mk-particles n w h D))
-        cols (collisions (vals ps))]
-    {:particles ps :collisions cols :stop false}))
+  (let [;ps (basic-colliding)
+        ps (to-id-hash-map (mk-particles n w h (/ D 5.)))
+        ps2 (eliminate-overlaps ps)
+        cols (collisions (vals ps2))]
+    {:particles ps2 :collisions cols :stop false}))
 
 ;; ---------- Driver ---------------
-(def WIDTH 500)
-(def HEIGHT 500)
 
 (defn update-particles [state] 
   (into state (iterate-particle-sim (:particles state))))
@@ -164,7 +205,7 @@
   (loop [] 
     (let [st @state]
     (when (not (:stop st))
-      (print ".")
+      ;(print ".")
       (swap! state update-particles)
       (recur)))))
 
@@ -187,6 +228,7 @@
 ;;      (q/ellipse (:x p) (:y p) D D))))
 )
 
+
 (defn start-sketch [state]
   (q/sketch
     :host "host"
@@ -200,11 +242,15 @@
     (async/thread (run-sim state))
     (start-sketch state)))
 
+; ------------ Syncronous --------------
+(defn setup []
+  (q/frame-rate 30))
+
 (defn start-sketch-sync [state]
   (q/sketch
     :host "host"
     :size [WIDTH HEIGHT]
-    :setup (fn [] state)
+    :setup (fn [] (setup) state)
     :draw #(draw %)
     :update #(update-particles %)
     :on-close (fn [_] (q/save-frame "frame###.png")) 
