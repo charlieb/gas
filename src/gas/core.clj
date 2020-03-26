@@ -71,12 +71,12 @@
 (defn dot  [p1 p2] (+ (* (:x p1) (:x p2)) (* (:y p1) (:y p2))))
 (defn mag [v] (math/sqrt (+ (math/expt (:x v) 2) (math/expt (:y v) 2))))
 (defn norm [v] (vdiv v (mag v)))
+(defn v2p  [p] {:x (:vx p) :y (:vy p)})
 
 (defn elastic-collision 
   "Collides the two particles and returns a pair particles with updated velocities"
   [p1 p2]
-  (let [v2p (fn [p] {:x (:vx p) :y (:vy p)})
-        v1 (v2p p1)
+  (let [v1 (v2p p1)
         v2 (v2p p2)
 
         v1' (v- v1  (v* (v- p1 p2)
@@ -150,12 +150,14 @@
           {} collisions))
 
 (defn eliminate-overlaps [particles]
-  (loop [ps particles]
+  (loop [ps particles
+         i 0]
     (let [cols (collisions (vals ps))]
       (println (count cols))
-      (if (zero? (count cols))
+      (if (or (>= i 100) (zero? (count cols)))
         ps
-        (recur (into ps (exclude cols)))))))
+        (recur (into ps (exclude cols))
+               (inc i))))))
 
 ; TODO move these back down to DRIVER section
 (def WIDTH 500)
@@ -173,6 +175,15 @@
                                        :otherwise p))))])
                  particles)))
 
+(defn accelerate-particles [particles]
+  (->> particles
+       vals
+       (filter #(and (< (:x %) 50) (< (:y %) 50)))
+       (map #(assoc % :vy 0 :vx (mag (v2p %))))
+
+       to-id-hash-map
+       (into particles)))
+
 (defn iterate-particle-sim [particles]
   (let [cols (collisions (vals particles))
         parts (->> cols
@@ -181,6 +192,7 @@
                    (into particles)
                    keep-on-screen
                    eliminate-overlaps
+                   accelerate-particles
 
                    vals
                    (map apply-v)
