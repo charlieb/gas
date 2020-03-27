@@ -67,11 +67,12 @@
 (defn v+ [v1 v2] {:x (+ (:x v1) (:x v2)) :y (+ (:y v1) (:y v2))})
 (defn v- [v1 v2] {:x (- (:x v1) (:x v2)) :y (- (:y v1) (:y v2))})
 (defn v* [v s] {:x (* (:x v) s) :y (* (:y v) s)})
-(defn vdiv [v s] {:x (/ (:x v) s) :y (/ (:y v) s)})
+(defn vdiv [v s] (if (zero? s) {:x 0 :y 0} {:x (/ (:x v) s) :y (/ (:y v) s)}))
 (defn dot  [p1 p2] (+ (* (:x p1) (:x p2)) (* (:y p1) (:y p2))))
 (defn mag [v] (math/sqrt (+ (math/expt (:x v) 2) (math/expt (:y v) 2))))
 (defn norm [v] (vdiv v (mag v)))
 (defn v2p  [p] {:x (:vx p) :y (:vy p)})
+(defn p2v  [p] {:vx (:x p) :vy (:y p)})
 
 (defn elastic-collision 
   "Collides the two particles and returns a pair particles with updated velocities"
@@ -154,14 +155,14 @@
          i 0]
     (let [cols (collisions (vals ps))]
       (println (count cols))
-      (if (or (>= i 100) (zero? (count cols)))
+      (if (or (>= i 1) (zero? (count cols)))
         ps
         (recur (into ps (exclude cols))
                (inc i))))))
 
 ; TODO move these back down to DRIVER section
-(def WIDTH 500)
-(def HEIGHT 500)
+(def WIDTH 1280)
+(def HEIGHT 720)
 (defn keep-on-screen [particles]
   (apply hash-map
          (mapcat (fn [[id p]]
@@ -176,27 +177,62 @@
                  particles)))
 
 (defn accelerate-particles [particles]
+  (let [p1 (->> particles
+                vals
+                (filter #(and (< (:x %) 50) (< (:y %) 50)))
+                (map #(into % (p2v (v* (v+ (norm (v2p %)) {:x 0.125 :y 0}) (mag (v2p %))))))
+                to-id-hash-map
+                (into particles))
+        p2 (->> p1
+                vals
+                (filter #(and (> (:x %) (- WIDTH 50)) (< (:y %) 50)))
+                (map #(into % (p2v (v* (v+ (norm (v2p %)) {:x 0 :y 0.125}) (mag (v2p %))))))
+                to-id-hash-map
+                (into p1))
+        p3 (->> p2
+                vals
+                (filter #(and (> (:x %) (- WIDTH 50)) (> (:y %) (- HEIGHT 50))))
+                (map #(into % (p2v (v* (v+ (norm (v2p %)) {:x -0.125 :y 0}) (mag (v2p %))))))
+                to-id-hash-map
+                (into p2))
+        p4 (->> p3
+                vals
+                (filter #(and (< (:x %) 50) (> (:y %) (- HEIGHT 50))))
+                (map #(into % (p2v (v* (v+ (norm (v2p %)) {:x 0 :y -0.125}) (mag (v2p %))))))
+                to-id-hash-map
+                (into p3))
+        ]
+    p4))
+
+(defn jitter [particles]
   (->> particles
        vals
-       (filter #(and (< (:x %) 50) (< (:y %) 50)))
-       (map #(assoc % :vy 0 :vx (mag (v2p %))))
+       (map #(assoc %
+                    :x (+ (:x %) (* 0.1 (- 1 (rand 0.5))))
+                    :y (+ (:y %) (* 0.1 (- 1 (rand 0.5))))))
+       to-id-hash-map))
 
-       to-id-hash-map
-       (into particles)))
+(defn collide [collisions particles]
+  (mapcat #(apply elastic-collision %))
+  to-id-hash-map
+  (into particles)
+  )
 
 (defn iterate-particle-sim [particles]
   (let [cols (collisions (vals particles))
-        parts (->> cols
-                   (mapcat #(apply elastic-collision %))
-                   to-id-hash-map
-                   (into particles)
-                   keep-on-screen
-                   eliminate-overlaps
-                   accelerate-particles
+        parts (->> particles
+                   (collide collisions)
+                   (#(into % (exclude cols)))
+                   
+;                   jitter
+;                   eliminate-overlaps
+;                   accelerate-particles
 
                    vals
                    (map apply-v)
-                   to-id-hash-map)]
+                   to-id-hash-map
+                   keep-on-screen
+                   )]
     {:particles parts :collisions cols})) 
 
 (defn init-particles
@@ -233,11 +269,13 @@
   (q/stroke 0 255 0)
   (doseq [[p1 p2] (:collisions state)]
     (q/line (:x p1) (:y p1) (:x p2) (:y p2)))
+
   ;;(q/stroke 0 0 255)
 ;;  (doseq [[v b] (:buckets state)]
 ;;    (q/stroke 0 v 255)
 ;;    (doseq [p b]
 ;;      (q/ellipse (:x p) (:y p) D D))))
+(q/save-frame "frame#####.png")
 )
 
 
@@ -246,7 +284,7 @@
     :host "host"
     :size [WIDTH HEIGHT]
     :draw #(draw @state)
-    :on-close (fn [] (q/save-frame "frame###.png") (swap! state #(assoc % :stop true))
+    :on-close (fn [] (swap! state #(assoc % :stop true))
   )))
 
 (defn start [n]
@@ -265,7 +303,7 @@
     :setup (fn [] (setup) state)
     :draw #(draw %)
     :update #(update-particles %)
-    :on-close (fn [_] (q/save-frame "frame###.png")) 
+;    :on-close (fn [_] (q/save-frame "frame###.png")) 
     :middleware [m/fun-mode]
   ))
 
