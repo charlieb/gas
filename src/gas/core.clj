@@ -91,10 +91,6 @@
         vset (fn [p v] (assoc p :vx (:x v) :vy (:y v)))]
     (list (vset p1 v1') (vset p2 v2'))))
 
-;;(defn collate-collistions [pairs]
-;;  (reduce (fn [acc [p1 p2]] 
-;;            (update acc p1 #(if (nil? %) {p2} (conj % p2))))))
-
 (defn apply-v [p] (into p {:x (+ (:x p) (:vx p))
                            :y (+ (:y p) (:vy p))}))
 
@@ -126,6 +122,12 @@
     (and (= (count buckt) (count naive))
          (every? (map (fn [pb] (some (partial pair= pb) naive))) buckt))))
 
+(defn total-velocity [particles]
+  (reduce (fn [v p] (v+ v (v2p p))) {:x 0 :y 0} particles))
+
+(defn total-position [particles]
+  (reduce v+ {:x 0 :y 0} particles))
+
 ;; ^^^^^^^^^^^ Above particles is a list
 ;; vvvvvvvvvvv Below particles is a hash-map with id as the key
 
@@ -133,8 +135,10 @@
 
 
 (defn basic-colliding []
-  {1 {:id 1 :x 200.  :y 200. :vx 0. :vy 0.} 
-   2 {:id 2 :x 200.  :y 250. :vx 0. :vy -1}})
+  {1 {:id 1 :x 199.9  :y 199.9 :vx 0.1 :vy 0.} 
+   2 {:id 2 :x 200.1  :y 200.1 :vx -5.1 :vy 0}
+   3 {:id 3 :x 200.1  :y 199.9 :vx -5.1 :vy 0}
+   })
 
 (defn exclude "Returns hash-map of particles after moving to non-overlapping positions"
   [collisions]
@@ -143,11 +147,11 @@
                   dvnorm (norm dv)
                   m (mag dv)
                   ovl (- D m)
-                  p1d (into p1 (v+ p1 (v* dvnorm (/ ovl 1.5))))
-                  p2d (into p2 (v+ p2 (v* dvnorm (/ ovl -1.5))))
+                  p1d (into p1 (v+ p1 (v* dvnorm (/ ovl 2.0))))
+                  p2d (into p2 (v+ p2 (v* dvnorm (/ ovl -2.0))))
                   ]
-              (into parts {(:id p1) p1d
-                           (:id p2) p2d})))
+              (assoc parts (:id p1) p1d
+                           (:id p2) p2d)))
           {} collisions))
 
 (defn eliminate-overlaps [particles]
@@ -161,8 +165,8 @@
                (inc i))))))
 
 ; TODO move these back down to DRIVER section
-(def WIDTH 1280)
-(def HEIGHT 720)
+(def WIDTH 500)
+(def HEIGHT 500)
 (defn keep-on-screen [particles]
   (apply hash-map
          (mapcat (fn [[id p]]
@@ -219,27 +223,29 @@
   )
 
 (defn iterate-particle-sim [particles]
+;  (println "V" (total-velocity (vals particles)))
+  (println "P" (total-position (vals particles)))
   (let [cols (collisions (vals particles))
         parts (->> particles
-                   (collide collisions)
-                   (#(into % (exclude cols)))
+;                   (collide collisions)
+;                   (#(into % (exclude cols)))
                    
 ;                   jitter
 ;                   eliminate-overlaps
 ;                   accelerate-particles
 
-                   vals
-                   (map apply-v)
-                   to-id-hash-map
-                   keep-on-screen
+;                   vals
+;                   (map apply-v)
+;                   to-id-hash-map
+;                   keep-on-screen
                    )]
     {:particles parts :collisions cols})) 
 
 (defn init-particles
   "main?"
   [n w h]
-  (let [;ps (basic-colliding)
-        ps (to-id-hash-map (mk-particles n w h (/ D 5.)))
+  (let [ps (basic-colliding)
+        ;ps (to-id-hash-map (mk-particles n w h (/ D 5.)))
         ps2 (eliminate-overlaps ps)
         cols (collisions (vals ps2))]
     {:particles ps2 :collisions cols :stop false}))
@@ -275,7 +281,7 @@
 ;;    (q/stroke 0 v 255)
 ;;    (doseq [p b]
 ;;      (q/ellipse (:x p) (:y p) D D))))
-(q/save-frame "frame#####.png")
+;(q/save-frame "frame#####.png")
 )
 
 
