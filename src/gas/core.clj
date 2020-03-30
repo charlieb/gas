@@ -94,6 +94,7 @@
 (defn apply-v [p] (into p {:x (+ (:x p) (:vx p))
                            :y (+ (:y p) (:vy p))}))
 
+(defn collate-collisions [collisions])
 ;; ---------- Validation -----------
 (defn check-all-for-collisions
   "Check every particle against every other to allow validation of bucket approach"
@@ -152,7 +153,8 @@
                   ]
               (assoc parts (:id p1) p1d
                            (:id p2) p2d)))
-          {} collisions))
+          {} (shuffle collisions)))
+
 
 (defn eliminate-overlaps [particles]
   (loop [ps particles
@@ -227,25 +229,25 @@
   (println "P" (total-position (vals particles)))
   (let [cols (collisions (vals particles))
         parts (->> particles
-;                   (collide collisions)
-;                   (#(into % (exclude cols)))
+                   (collide collisions)
+                   (#(into % (exclude cols)))
                    
 ;                   jitter
 ;                   eliminate-overlaps
 ;                   accelerate-particles
 
-;                   vals
-;                   (map apply-v)
-;                   to-id-hash-map
-;                   keep-on-screen
+                   vals
+                   (map apply-v)
+                   to-id-hash-map
+                   keep-on-screen
                    )]
     {:particles parts :collisions cols})) 
 
 (defn init-particles
   "main?"
   [n w h]
-  (let [ps (basic-colliding)
-        ;ps (to-id-hash-map (mk-particles n w h (/ D 5.)))
+  (let [;ps (basic-colliding)
+        ps (to-id-hash-map (mk-particles n w h (/ D 5.)))
         ps2 (eliminate-overlaps ps)
         cols (collisions (vals ps2))]
     {:particles ps2 :collisions cols :stop false}))
@@ -281,7 +283,7 @@
 ;;    (q/stroke 0 v 255)
 ;;    (doseq [p b]
 ;;      (q/ellipse (:x p) (:y p) D D))))
-;(q/save-frame "frame#####.png")
+(q/save-frame "frame#####.png")
 )
 
 
