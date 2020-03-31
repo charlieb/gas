@@ -94,7 +94,11 @@
 (defn apply-v [p] (into p {:x (+ (:x p) (:vx p))
                            :y (+ (:y p) (:vy p))}))
 
-(defn collate-collisions [collisions])
+(defn collate-collisions [collisions]
+  (reduce (fn [acc [p1 p2]] (-> acc
+                                (update p1 #(if (nil? %) #{p2} (conj % p2)))
+                                (update p2 #(if (nil? %) #{p1} (conj % p1)))))
+          {} collisions))
 ;; ---------- Validation -----------
 (defn check-all-for-collisions
   "Check every particle against every other to allow validation of bucket approach"
