@@ -9,9 +9,25 @@
 
 (defn prnt [prefix x] (println prefix x) x)
 
+(defrecord Vec2 [x y])
+(defn v+ [v1 v2] (Vec2. (+ (:x v1) (:x v2)) (+ (:y v1) (:y v2))))
+(defn v- [v1 v2] (Vec2. (- (:x v1) (:x v2)) (- (:y v1) (:y v2))))
+(defn v* [v s] (Vec2. (* (:x v) s) (* (:y v) s)))
+(defn vdiv [v s] (if (zero? s) (Vec2. 0 0)  (Vec2. (/ (:x v) s) (/ (:y v) s))))
+(defn dot  [p1 p2] (+ (* (:x p1) (:x p2)) (* (:y p1) (:y p2))))
+(defn mag [v] (math/sqrt (+ (math/expt (:x v) 2) (math/expt (:y v) 2))))
+(defn norm [v] (vdiv v (mag v)))
+
+(defn px [v] (:x (:p v)))
+(defn py [v] (:y (:p v)))
+(defn vx [v] (:x (:v v)))
+(defn vy [v] (:y (:v v)))
+(defn fx [v] (:x (:f v)))
+(defn fy [v] (:y (:f v)))
+
 (defn mk-particle [x y vx vy] 
   (alter-var-root (var next_id) #(+ 1 %))
-  {:id next_id :x x :y y :vx vx :vy vy})
+  {:id next_id :p (Vec2. x y) :v (Vec2. vx vy) :f (Vec2. 0 0)})
 
 (defn mk-particles [n w h d]
   (repeatedly n #(mk-particle (rand w) (rand h) (- (* 0.5 d) (rand d)) (- (* 0.5 d) (rand d)))))
@@ -24,24 +40,24 @@
           items))
 
 (defn dist [p1 p2]
-  (math/sqrt (+ (math/expt (- (:x p1) (:x p2)) 2)
-                (math/expt (- (:y p1) (:y p2)) 2))))
+  (math/sqrt (+ (math/expt (- (px p1) (px p2)) 2)
+                (math/expt (- (py p1) (py p2)) 2))))
 
 
 (defn collide-particle-lists
   "Detect collisions between 'collide-parts' and 'concat collide-parts parts'.
   Return a list of pairs of colliding particles."
   [collide-parts parts]
-  (let [within-D (fn [p other] (>= D (math/abs (- (:x other) (:x p)))))
-        within-D-right (fn [p other] (>= D (- (:x other) (:x p))))]
+  (let [within-D (fn [p other] (>= D (math/abs (- (px other) (px p)))))
+        within-D-right (fn [p other] (>= D (- (px other) (px p))))]
     (loop [cols collide-parts
-           other (drop-while #(< D (- (:x (first cols)) (:x %))) parts)
+           other (drop-while #(< D (- (px (first cols)) (px %))) parts)
            pairs (list)]
       (if (empty? cols)
         pairs
         (recur 
           (rest cols)
-          (drop-while #(< D (- (:x (second cols)) (:x %))) parts)
+          (drop-while #(< D (- (px (second cols)) (px %))) parts)
           (concat pairs
                   (filter (fn [[p1 p2]] (> D (dist p1 p2))) 
                           (map list 
@@ -53,8 +69,8 @@
 (defn collisions
   "Yields a list of pairs of colliding particles"
   [particles]
-  (let [buckets (into {} (map (fn [[k v]] [k (sort-by :x v)])
-                              (bucket-by particles :y D)))]
+  (let [buckets (into {} (map (fn [[k v]] [k (sort-by px v)])
+                              (bucket-by particles py D)))]
     (loop [bys (keys buckets)
            pairs (list)]
       (if (empty? bys)
@@ -64,21 +80,14 @@
                        (collide-particle-lists (buckets (first bys))
                                                (buckets (+ (first bys) D)))))))))
 
-(defn v+ [v1 v2] {:x (+ (:x v1) (:x v2)) :y (+ (:y v1) (:y v2))})
-(defn v- [v1 v2] {:x (- (:x v1) (:x v2)) :y (- (:y v1) (:y v2))})
-(defn v* [v s] {:x (* (:x v) s) :y (* (:y v) s)})
-(defn vdiv [v s] (if (zero? s) {:x 0 :y 0} {:x (/ (:x v) s) :y (/ (:y v) s)}))
-(defn dot  [p1 p2] (+ (* (:x p1) (:x p2)) (* (:y p1) (:y p2))))
-(defn mag [v] (math/sqrt (+ (math/expt (:x v) 2) (math/expt (:y v) 2))))
-(defn norm [v] (vdiv v (mag v)))
-(defn v2p  [p] {:x (:vx p) :y (:vy p)})
-(defn p2v  [p] {:vx (:x p) :vy (:y p)})
 
 (defn elastic-collision 
   "Collides the two particles and returns a pair particles with updated velocities"
-  [p1 p2]
-  (let [v1 (v2p p1)
-        v2 (v2p p2)
+  [part1 part2]
+  (let [p1 (:p part1)
+        p2 (:p part2)
+        v1 (:v p1)
+        v2 (:v p2)
 
         v1' (v- v1  (v* (v- p1 p2)
                       (/ (dot (v- v1 v2) (v- p1 p2))
@@ -86,19 +95,21 @@
 
         v2' (v- v2 (v* (v- p2 p1)
                       (/ (dot (v- v2 v1) (v- p2 p1))
-                         (dot (v- p2 p1) (v- p2 p1)))))
+                         (dot (v- p2 p1) (v- p2 p1)))))]
+    (list (assoc part1 :v v1') (assoc part2 :v v2'))))
 
-        vset (fn [p v] (assoc p :vx (:x v) :vy (:y v)))]
-    (list (vset p1 v1') (vset p2 v2'))))
-
-(defn apply-v [p] (into p {:x (+ (:x p) (:vx p))
-                           :y (+ (:y p) (:vy p))}))
+(defn apply-motion [p]
+  (-> p
+      (update :v #(v+ % (:f p)))
+      (#(let [p %] (assoc p :p (v+ (:p p) (:v p)))))
+      (assoc :f (Vec2. 0 0))))
 
 (defn collate-collisions [collisions]
   (reduce (fn [acc [p1 p2]] (-> acc
                                 (update p1 #(if (nil? %) #{p2} (conj % p2)))
                                 (update p2 #(if (nil? %) #{p1} (conj % p1)))))
           {} collisions))
+
 ;; ---------- Validation -----------
 (defn check-all-for-collisions
   "Check every particle against every other to allow validation of bucket approach"
@@ -115,9 +126,9 @@
                           (repeat p)))))))
 
 (defn check-pairs [n]
-  (let [ps (sort-by :x (mk-particles n 500 500 D))
-        naive (map #(sort-by :x %) (sort-by #(:x (first %)) (check-all-for-collisions ps)))
-        buckt (map #(sort-by :x %) (sort-by #(:x (first %)) (collisions ps)))
+  (let [ps (sort-by px (mk-particles n 500 500 D))
+        naive (map #(sort-by px %) (sort-by #(px (first %)) (check-all-for-collisions ps)))
+        buckt (map #(sort-by px %) (sort-by #(px (first %)) (collisions ps)))
         pair= (fn [[p11 p12] [p21 p22]] (or (and (= p11 p21) (= p12 p22))
                                             (and (= p12 p21) (= p11 p22))
                                             (and (= p11 p22) (= p12 p21))
@@ -128,10 +139,10 @@
          (every? (map (fn [pb] (some (partial pair= pb) naive))) buckt))))
 
 (defn total-velocity [particles]
-  (reduce (fn [v p] (v+ v (v2p p))) {:x 0 :y 0} particles))
+  (reduce v+ (Vec2. 0 0) (map :v particles)))
 
 (defn total-position [particles]
-  (reduce v+ {:x 0 :y 0} particles))
+  (reduce v+ (Vec2. 0 0) (map :p particles)))
 
 ;; ^^^^^^^^^^^ Above particles is a list
 ;; vvvvvvvvvvv Below particles is a hash-map with id as the key
@@ -140,20 +151,21 @@
 
 
 (defn basic-colliding []
-  {1 {:id 1 :x 199.9  :y 199.9 :vx 0.1 :vy 0.} 
-   2 {:id 2 :x 200.1  :y 200.1 :vx -5.1 :vy 0}
-   3 {:id 3 :x 200.1  :y 199.9 :vx -5.1 :vy 0}
+  {1 {:id 1 px 199.9  py 199.9 vx 0.1 vy 0.} 
+   2 {:id 2 px 200.1  py 200.1 vx -5.1 vy 0}
+   3 {:id 3 px 200.1  py 199.9 vx -5.1 vy 0}
    })
+
 
 (defn exclude "Returns hash-map of particles after moving to non-overlapping positions"
   [collisions]
   (reduce (fn [parts [p1 p2]]
-            (let [dv (v- p1 p2)
+            (let [dv (v- (:p p1) (:p p2))
                   dvnorm (norm dv)
                   m (mag dv)
                   ovl (- D m)
-                  p1d (into p1 (v+ p1 (v* dvnorm (/ ovl 2.0))))
-                  p2d (into p2 (v+ p2 (v* dvnorm (/ ovl -2.0))))
+                  p1d (assoc p1 :p (v+ (:p p1) (v* dvnorm (/ ovl 2.0))))
+                  p2d (assoc p2 :p (v+ (:p p2) (v* dvnorm (/ ovl -2.0))))
                   ]
               (assoc parts (:id p1) p1d
                            (:id p2) p2d)))
@@ -178,37 +190,37 @@
          (mapcat (fn [[id p]]
                    [id 
                     (-> p
-                        ((fn [p] (cond (< (:x p) 0) (assoc p :x 0 :vx (- (:vx p)))
-                                       (> (:x p) WIDTH) (assoc p :x WIDTH :vx (- (:vx p)))
+                        ((fn [p] (cond (< (px p) 0) (assoc p px 0 vx (- (vx p)))
+                                       (> (px p) WIDTH) (assoc p px WIDTH vx (- (vx p)))
                                        :otherwise p)))
-                        ((fn [p] (cond (< (:y p) 0) (assoc p :y 0 :vy (- (:vy p)))
-                                       (> (:y p) HEIGHT) (assoc p :y HEIGHT :vy (- (:vy p)))
+                        ((fn [p] (cond (< (py p) 0) (assoc p py 0 vy (- (vy p)))
+                                       (> (py p) HEIGHT) (assoc p py HEIGHT vy (- (vy p)))
                                        :otherwise p))))])
                  particles)))
 
 (defn accelerate-particles [particles]
   (let [p1 (->> particles
                 vals
-                (filter #(and (< (:x %) 50) (< (:y %) 50)))
-                (map #(into % (p2v (v* (v+ (norm (v2p %)) {:x 0.125 :y 0}) (mag (v2p %))))))
+                (filter #(and (< (px %) 50) (< (py %) 50)))
+                (map #(into % (p2v (v* (v+ (norm (v2p %)) {px 0.125 py 0}) (mag (v2p %))))))
                 to-id-hash-map
                 (into particles))
         p2 (->> p1
                 vals
-                (filter #(and (> (:x %) (- WIDTH 50)) (< (:y %) 50)))
-                (map #(into % (p2v (v* (v+ (norm (v2p %)) {:x 0 :y 0.125}) (mag (v2p %))))))
+                (filter #(and (> (px %) (- WIDTH 50)) (< (py %) 50)))
+                (map #(into % (p2v (v* (v+ (norm (v2p %)) {px 0 py 0.125}) (mag (v2p %))))))
                 to-id-hash-map
                 (into p1))
         p3 (->> p2
                 vals
-                (filter #(and (> (:x %) (- WIDTH 50)) (> (:y %) (- HEIGHT 50))))
-                (map #(into % (p2v (v* (v+ (norm (v2p %)) {:x -0.125 :y 0}) (mag (v2p %))))))
+                (filter #(and (> (px %) (- WIDTH 50)) (> (py %) (- HEIGHT 50))))
+                (map #(into % (p2v (v* (v+ (norm (v2p %)) {px -0.125 py 0}) (mag (v2p %))))))
                 to-id-hash-map
                 (into p2))
         p4 (->> p3
                 vals
-                (filter #(and (< (:x %) 50) (> (:y %) (- HEIGHT 50))))
-                (map #(into % (p2v (v* (v+ (norm (v2p %)) {:x 0 :y -0.125}) (mag (v2p %))))))
+                (filter #(and (< (px %) 50) (> (py %) (- HEIGHT 50))))
+                (map #(into % (p2v (v* (v+ (norm (v2p %)) {px 0 py -0.125}) (mag (v2p %))))))
                 to-id-hash-map
                 (into p3))
         ]
@@ -218,9 +230,20 @@
   (->> particles
        vals
        (map #(assoc %
-                    :x (+ (:x %) (* 0.1 (- 1 (rand 0.5))))
-                    :y (+ (:y %) (* 0.1 (- 1 (rand 0.5))))))
+                    px (+ (px %) (* 0.1 (- 1 (rand 0.5))))
+                    py (+ (py %) (* 0.1 (- 1 (rand 0.5))))))
        to-id-hash-map))
+
+;(defn pressure [collisions particles]
+;  (let [pressures (hash-map (map (fn [[p cs]] [(:id  p) (count cs)])
+;                                 (collate-collisions collisions)))]
+;    (reduce (fn [parts [p1 p2]]
+;              (let [dv (v- p c)
+;                    dvnorm (norm dv)
+;                    p1d (into p1 (v+ p1 (v* dvnorm (pressures p2))))
+;                    p2d (into p2 (v+ p2 (v* dvnorm (pressures p1))))]))
+;            cols))
+;  )))
 
 (defn collide [collisions particles]
   (mapcat #(apply elastic-collision %))
@@ -241,7 +264,7 @@
 ;                   accelerate-particles
 
                    vals
-                   (map apply-v)
+                   (map apply-motion)
                    to-id-hash-map
                    keep-on-screen
                    )]
@@ -277,16 +300,16 @@
   (q/no-fill)
   (q/stroke 0 0 255)
   (doseq [p (vals (:particles state))]
-    (q/ellipse (:x p) (:y p) D D))
+    (q/ellipse (px p) (py p) D D))
   (q/stroke 0 255 0)
   (doseq [[p1 p2] (:collisions state)]
-    (q/line (:x p1) (:y p1) (:x p2) (:y p2)))
+    (q/line (px p1) (py p1) (px p2) (py p2)))
 
   ;;(q/stroke 0 0 255)
 ;;  (doseq [[v b] (:buckets state)]
 ;;    (q/stroke 0 v 255)
 ;;    (doseq [p b]
-;;      (q/ellipse (:x p) (:y p) D D))))
+;;      (q/ellipse (px p) (py p) D D))))
 (q/save-frame "frame#####.png")
 )
 
