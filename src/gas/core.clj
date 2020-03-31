@@ -86,8 +86,8 @@
   [part1 part2]
   (let [p1 (:p part1)
         p2 (:p part2)
-        v1 (:v p1)
-        v2 (:v p2)
+        v1 (:v part1)
+        v2 (:v part2)
 
         v1' (v- v1  (v* (v- p1 p2)
                       (/ (dot (v- v1 v2) (v- p1 p2))
@@ -151,9 +151,9 @@
 
 
 (defn basic-colliding []
-  {1 {:id 1 px 199.9  py 199.9 vx 0.1 vy 0.} 
-   2 {:id 2 px 200.1  py 200.1 vx -5.1 vy 0}
-   3 {:id 3 px 200.1  py 199.9 vx -5.1 vy 0}
+  {1 {:id 1 :p (Vec2. 200 215) :v (Vec2. 0 -0.5) :f (Vec2. 0 0)}
+   2 {:id 2 :p (Vec2. 205 200) :v (Vec2. -0.1 0) :f (Vec2. 0 0)}
+   3 {:id 3 :p (Vec2. 220 201) :v (Vec2. 0 0) :f (Vec2. 0 0)}
    })
 
 
@@ -169,7 +169,7 @@
                   ]
               (assoc parts (:id p1) p1d
                            (:id p2) p2d)))
-          {} (shuffle collisions)))
+          {} collisions))
 
 
 (defn eliminate-overlaps [particles]
@@ -190,11 +190,11 @@
          (mapcat (fn [[id p]]
                    [id 
                     (-> p
-                        ((fn [p] (cond (< (px p) 0) (assoc p px 0 vx (- (vx p)))
-                                       (> (px p) WIDTH) (assoc p px WIDTH vx (- (vx p)))
+                        ((fn [p] (cond (< (px p) 0) (assoc-in p [:v :x] (math/abs (vx p)))
+                                       (> (px p) WIDTH) (assoc-in p [:v :x] (- (math/abs (vx p))))
                                        :otherwise p)))
-                        ((fn [p] (cond (< (py p) 0) (assoc p py 0 vy (- (vy p)))
-                                       (> (py p) HEIGHT) (assoc p py HEIGHT vy (- (vy p)))
+                        ((fn [p] (cond (< (py p) 0) (assoc-in p [:v :y] (math/abs (vy p)))
+                                       (> (py p) HEIGHT) (assoc-in p [:v :y] (- (math/abs (vy p))))
                                        :otherwise p))))])
                  particles)))
 
@@ -234,30 +234,40 @@
                     py (+ (py %) (* 0.1 (- 1 (rand 0.5))))))
        to-id-hash-map))
 
-;(defn pressure [collisions particles]
-;  (let [pressures (hash-map (map (fn [[p cs]] [(:id  p) (count cs)])
-;                                 (collate-collisions collisions)))]
-;    (reduce (fn [parts [p1 p2]]
-;              (let [dv (v- p c)
-;                    dvnorm (norm dv)
-;                    p1d (into p1 (v+ p1 (v* dvnorm (pressures p2))))
-;                    p2d (into p2 (v+ p2 (v* dvnorm (pressures p1))))]))
-;            cols))
-;  )))
+(defn pressure [collisions particles]
+  (let [pressures (apply hash-map (mapcat (fn [[p cs]] (list (:id  p) (count cs)))
+                                 (collate-collisions collisions)))]
+    (reduce (fn [parts [p1 p2]]
+              ;(println p1 p2)
+              (let [p1 (parts (:id p1))
+                    p2 (parts (:id p2))
+                    dv (v- (:p p1) (:p p2))
+                    dvnorm (norm dv)
+                    _ (println dvnorm)
+                    p1d (assoc p1 :f (v+ (:f p1) (v* dvnorm (pressures p2))))
+                    p2d (assoc p2 :f (v+ (:f p2) (v* dvnorm (- (pressures p1)))))]
+                (assoc parts 
+                       (:id p1) p1d
+                       (:id p2) p2d)))
+            particles
+            collisions)))
 
 (defn collide [collisions particles]
-  (mapcat #(apply elastic-collision %))
-  to-id-hash-map
-  (into particles)
-  )
+  (->> collisions
+       (mapcat #(apply elastic-collision %))
+       to-id-hash-map
+       (into particles)))
 
 (defn iterate-particle-sim [particles]
 ;  (println "V" (total-velocity (vals particles)))
-  (println "P" (total-position (vals particles)))
-  (let [cols (collisions (vals particles))
+;  (println "P" (total-position (vals particles)))
+  ;(doseq [p particles] (println p))
+  (let [cols (shuffle (collisions (vals particles)))
         parts (->> particles
-                   (collide collisions)
-                   (#(into % (exclude cols)))
+;                   (collide cols)
+                   (pressure cols)
+;
+;                   (#(into % (exclude cols)))
                    
 ;                   jitter
 ;                   eliminate-overlaps
