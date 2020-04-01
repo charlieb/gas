@@ -104,6 +104,11 @@
       (#(let [p %] (assoc p :p (v+ (:p p) (:v p)))))
       (assoc :f (Vec2. 0 0))))
 
+(defn apply-damping [coeff p]
+  (update p :v #(v* % coeff)))
+
+(defn g [coeff p] (update p :f #(v+ % (Vec2. 0 coeff))))
+
 (defn collate-collisions [collisions]
   (reduce (fn [acc [p1 p2]] (-> acc
                                 (update p1 #(if (nil? %) #{p2} (conj % p2)))
@@ -186,17 +191,21 @@
 (def WIDTH 500)
 (def HEIGHT 500)
 (defn keep-on-screen [particles]
+  (let [stop-limit (fn [p axis limit] 
+                     (-> p
+                         (assoc-in [:p axis] limit)
+                         (assoc-in [:v axis] 0)))]
   (apply hash-map
          (mapcat (fn [[id p]]
                    [id 
                     (-> p
-                        ((fn [p] (cond (< (px p) 0) (assoc-in p [:v :x] (math/abs (vx p)))
-                                       (> (px p) WIDTH) (assoc-in p [:v :x] (- (math/abs (vx p))))
+                        ((fn [p] (cond (< (px p) 0) (stop-limit p :x 0)
+                                       (> (px p) WIDTH) (stop-limit p :x WIDTH)
                                        :otherwise p)))
-                        ((fn [p] (cond (< (py p) 0) (assoc-in p [:v :y] (math/abs (vy p)))
-                                       (> (py p) HEIGHT) (assoc-in p [:v :y] (- (math/abs (vy p))))
+                        ((fn [p] (cond (< (py p) 0) (stop-limit p :y 0)
+                                       (> (py p) HEIGHT) (stop-limit p :y HEIGHT)
                                        :otherwise p))))])
-                 particles)))
+                 particles))))
 
 (defn accelerate-particles [particles]
   (let [p1 (->> particles
@@ -236,16 +245,18 @@
 
 (defn pressure [collisions particles]
   (let [pressures (apply hash-map (mapcat (fn [[p cs]] (list (:id  p) (count cs)))
-                                 (collate-collisions collisions)))]
+                                 (collate-collisions collisions)))
+        coeff 0.1]
+    ;(println pressures)
     (reduce (fn [parts [p1 p2]]
               ;(println p1 p2)
               (let [p1 (parts (:id p1))
                     p2 (parts (:id p2))
                     dv (v- (:p p1) (:p p2))
                     dvnorm (norm dv)
-                    _ (println dvnorm)
-                    p1d (assoc p1 :f (v+ (:f p1) (v* dvnorm (pressures p2))))
-                    p2d (assoc p2 :f (v+ (:f p2) (v* dvnorm (- (pressures p1)))))]
+       ;             _ (println dvnorm p1 p2)
+                    p1d (assoc p1 :f (v+ (:f p1) (v* dvnorm (* coeff (pressures (:id p2))))))
+                    p2d (assoc p2 :f (v+ (:f p2) (v* dvnorm (* coeff (- (pressures (:id p1)))))))]
                 (assoc parts 
                        (:id p1) p1d
                        (:id p2) p2d)))
@@ -274,6 +285,8 @@
 ;                   accelerate-particles
 
                    vals
+                   (map (partial apply-damping 0.89))
+                   (map (partial g 0.1))
                    (map apply-motion)
                    to-id-hash-map
                    keep-on-screen
@@ -308,9 +321,9 @@
 (defn draw [state]
   (q/background 0)
   (q/no-fill)
-  (q/stroke 0 0 255)
-  (doseq [p (vals (:particles state))]
-    (q/ellipse (px p) (py p) D D))
+;  (q/stroke 0 0 255)
+;  (doseq [p (vals (:particles state))]
+;    (q/ellipse (px p) (py p) D D))
   (q/stroke 0 255 0)
   (doseq [[p1 p2] (:collisions state)]
     (q/line (px p1) (py p1) (px p2) (py p2)))
